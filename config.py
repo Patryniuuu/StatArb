@@ -1,0 +1,1 @@
+# Parametry (progi Z-Score, okna dla ECM, mnożniki)

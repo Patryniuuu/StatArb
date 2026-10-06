@@ -1,0 +1,1 @@
+# Główny skrypt spinający moduły w spójny proces
