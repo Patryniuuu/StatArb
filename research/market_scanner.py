@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from itertools import combinations
+from cointegration_math import CointegrationMath
 # Importujemy nasze struktury i silnik z poprzedniego pliku (zakładając, że są w cointegration_math.py)
 # from cointegration_math import CointegrationMath
 
@@ -31,26 +32,73 @@ class MarketScanner:
         self.min_half_life = min_half_life
         self.max_half_life = max_half_life
 
-    def scan_sector(self, df_prices: pd.DataFrame, df_market_cap: dict) -> pd.DataFrame:
+    def scan_sector(self, df_prices: pd.DataFrame, df_market_cap: pd.DataFrame) -> pd.DataFrame:
         """
         Główna pętla skanująca.
         df_prices: DataFrame z logarytmami cen spółek.
-        df_market_cap: Słownik kapitalizacji (ticker -> wartość).
+        df_market_cap: DataFrame z kapitalizacją (z kolumnami 'ticker' i 'marketCap').
         Zwraca: DataFrame z posortowanym rankingiem.
         """
         dopuszczone_pary = []
         tickers = df_prices.columns.to_list()
         
-        # 1. Użyj itertools.combinations, aby wygenerować pary (jak w Deepnote)
-        # 2. Pętla: dla każdej pary...
-        #    a) Ustal, kto jest X (większa kapitalizacja), a kto Y na podstawie df_market_cap
-        #    b) Wyciągnij wektory log_x i log_y
-        #    c) Wywołaj CointegrationMath.calculate_ols(...)
-        #    d) Wywołaj CointegrationMath.check_adf(..., max_pvalue=self.max_pvalue)
-        #    e) Sprawdź warunek (if adf_res.is_stationary == False: continue) - odrzucamy śmieci!
-        #    f) Wywołaj CointegrationMath.calculate_half_life(...)
-        #    g) Sprawdź warunek Half-Life (czy mieści się między self.min_half_life a self.max_half_life)
-        #    h) Jeśli przeżyje filtry: stwórz obiekt PairAnalysisResult i dodaj do dopuszczone_pary.append(...)
+        # Słownik dla szybszego wyszukiwania kapitalizacji
+        cap_dict = dict(zip(df_market_cap['ticker'], df_market_cap['marketCap']))
+
+        for pair in combinations(tickers, 2):
+            capX = cap_dict[pair[0]]
+            capY = cap_dict[pair[1]]
+            
+            # 1. FAZA PRZYGOTOWANIA DANYCH (Tylko to różni się w zależności od kapitalizacji)
+            if capX > capY:
+                objasniajaca = pair[0]
+                objasniana = pair[1]
+                # Pamiętaj o .to_numpy(), bo nasz silnik matematyczny tego oczekuje!
+                X = np.log(df_prices[pair[0]]).to_numpy()
+                Y = np.log(df_prices[pair[1]]).to_numpy()
+            else:
+                objasniajaca = pair[1]
+                objasniana = pair[0]
+                X = np.log(df_prices[pair[1]]).to_numpy()
+                Y = np.log(df_prices[pair[0]]).to_numpy()
+
+            ols_res = CointegrationMath.calculate_ols(Y, X)
+            
+            adf_res = CointegrationMath.check_adf(
+                residuals=ols_res.residuals,
+                max_pvalue=self.max_pvalue
+            )
+            
+            # Szybki filtr ADF
+            if not adf_res.is_stationary:
+                continue
+                
+            half_life_res = CointegrationMath.calculate_half_life(ols_res.residuals)
+            
+            # Szybki filtr Half-Life
+            if not (self.min_half_life <= half_life_res.half_life <= self.max_half_life):
+                continue
+                
+            # 3. SUKCES - Dodajemy do listy
+            dopuszczone_pary.append(
+                PairAnalysisResult(
+                    asset_y=objasniana,
+                    asset_x=objasniajaca,
+                    pval_adf=adf_res.pval,
+                    half_life=half_life_res.half_life,
+                    beta=ols_res.beta
+                )
+            )
+
+        # 4. ZAKOŃCZENIE PĘTLI I BUDOWA RANKINGU
+        if not dopuszczone_pary:
+            # Zabezpieczenie, jeśli żadna para nie przetrwa filtrów
+            return pd.DataFrame()
         
-        # Na koniec zamień listę obiektów na DataFrame, posortuj po half_life i zwróć!
-        raise NotImplementedError("Zaimplementuj pętlę skanującą!")
+        #zamiana na dataframea    
+        df_ranking = pd.DataFrame([vars(p) for p in dopuszczone_pary])
+        
+        # Sortujemy od najlepszego (najkrótszego) Half-Life
+        df_ranking = df_ranking.sort_values(by="half_life", ascending=True).reset_index(drop=True)
+        
+        return df_ranking
