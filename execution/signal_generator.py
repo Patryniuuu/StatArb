@@ -1,10 +1,10 @@
 # Logika wejścia/wyjścia na bazie Z-Score
 
 class SignalGenerator:
-    def __init__(self, entry_treshold: float, exit_treshold: float, SL_treshold: float):
-        self.entry_treshold = entry_treshold
-        self.exit_treshold = exit_treshold
-        self.SL_treshold = SL_treshold
+    def __init__(self, entry_threshold: float, exit_threshold: float, SL_threshold: float):
+        self.entry_threshold = entry_threshold
+        self.exit_threshold = exit_threshold
+        self.SL_threshold = SL_threshold
         self._reset_state()
 
     def _reset_state(self):
@@ -43,13 +43,13 @@ class SignalGenerator:
             if self.position == 'short':
                 if current_z < self.exit_threshold:      # Take Profit
                     trades.append(self._close_trade(current_date, current_z, 'TP'))
-                elif current_z > self.stop_loss_threshold: # Stop Loss
+                elif current_z > self.SL_threshold: # Stop Loss
                     trades.append(self._close_trade(current_date, current_z, 'SL'))
 
             elif self.position == 'long':
                 if current_z > -self.exit_threshold:     # Take Profit
                     trades.append(self._close_trade(current_date, current_z, 'TP'))
-                elif current_z < -self.stop_loss_threshold:# Stop Loss
+                elif current_z < -self.SL_threshold:# Stop Loss
                     trades.append(self._close_trade(current_date, current_z, 'SL'))
 
             # 2. Check entry conditions (only if no open position)
