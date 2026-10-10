@@ -25,7 +25,8 @@ class BacktestEngine:
         self.friction_per_leg = (commission_bps + slippage_bps) / 10_000.0
         
         # Dzienny koszt pożyczki dla pozycji krótkiej (252 dni sesyjne w roku)
-        self.daily_borrow_rate = borrow_rate_annual / 252.0
+        # zmieniam z 252 dni na 365 dni ponieważ za trzymanie w dni pozasesyjne pożyczki też się płaci, analogicznie jak ze zwykłymi pożyczkami pienięznymi to działa
+        self.daily_borrow_rate = borrow_rate_annual / 365.0
 
     def match_execution_prices(
         self, 
@@ -93,7 +94,37 @@ class BacktestEngine:
         # 7. Policz PnL netto:
         #    net_pnl = gross_pnl - execution_cost - borrow_cost.
         # 8. Zwróć zaktualizowany DataFrame.
-        raise NotImplementedError("Zaimplementuj kalkulację PnL i kosztów!")
+        #raise NotImplementedError("Zaimplementuj kalkulację PnL i kosztów!")
+        budget_per_trade = self.initial_capital * self.allocation_per_trade
+        capital_y = budget_per_trade/(1+abs(beta))
+        capital_x = abs(beta) * capital_y
+        
+        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'return_y'] = (df_trades_with_prices['exit_y'] - df_trades_with_prices['entry_y'])/df_trades_with_prices['entry_y']
+        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'return_x'] = (df_trades_with_prices['entry_x'] - df_trades_with_prices['exit_x'])/df_trades_with_prices['entry_x']
+        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'return_x'] = (df_trades_with_prices['exit_x'] - df_trades_with_prices['entry_x'])/df_trades_with_prices['entry_x']
+        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'return_y'] = (df_trades_with_prices['entry_y'] - df_trades_with_prices['exit_y'])/df_trades_with_prices['entry_y']
+        
+        df_trades_with_prices['gross_pnl'] = (capital_y * df_trades_with_prices['return_y']) + (np.sign(beta)*capital_x * df_trades_with_prices['return_x'])        
+        df_trades_with_prices['execution_cost'] = (capital_y + capital_x) * self.friction_per_leg + (capital_y * (df_trades_with_prices['exit_y'] / df_trades_with_prices['entry_y']) + capital_x * (df_trades_with_prices['exit_x'] / df_trades_with_prices['entry_x'])) * self.friction_per_leg
+        df_trades_with_prices['days_in_trade'] = (pd.to_datetime(df_trades_with_prices['close_date']) - pd.to_datetime(df_trades_with_prices['entry_date'])).dt.days
+
+        df_trades_with_prices['borrow_cost'] = 0.0
+        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'borrow_cost'] += capital_y * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+        if beta > 0:
+            # Dodatnia beta: X jest na krótko, gdy spread jest na długo (long)
+            df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+        else:
+            # Ujemna beta: X jest na krótko, gdy spread jest na krótko (short) - w tym wypadku masz shorta na Y i shorta na X!
+            df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+        
+        df_trades_with_prices['net_pnl'] = df_trades_with_prices['gross_pnl'] - df_trades_with_prices['execution_cost'] - df_trades_with_prices['borrow_cost']
+        df_trades_with_prices['net_return_pct'] = df_trades_with_prices['net_pnl'] / (capital_y + capital_x)
+
+        #df = df_trades_with_prices[['gross_pnl', 'execution_cost', 'borrow_cost', 'net_pnl', 'net_return_pct']]
+        
+        return df_trades_with_prices
+        # BARDZO WAŻNA UWAGA
+        # robiłem tu kiwki ze znakiem bety i nie wiem czy to nie zmienia czegoś w kodzie poniżej
 
     def calculate_performance_metrics(
         self, 
