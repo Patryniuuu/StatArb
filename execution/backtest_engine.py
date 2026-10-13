@@ -106,6 +106,92 @@ class BacktestEngine:
         return df_trades_with_prices
         
 
+    # ==========================================
+    # --- NOWE METODY DLA KOSZYKÓW (JOHANSEN) ---
+    # ==========================================
+
+    def match_basket_execution_prices(
+        self,
+        trades: List[Dict[str, Any]],
+        df_open_prices: pd.DataFrame,
+        tickers: List[str]
+    ) -> pd.DataFrame:
+        """Mapuje ceny Next Open dla wszystkich N spółek w koszyku."""
+        if not trades:
+            return pd.DataFrame()
+
+        df_trades = pd.DataFrame(trades)
+        next_open = df_open_prices.shift(-1)
+
+        cols_to_check = []
+        for ticker in tickers:
+            df_trades[f'entry_{ticker}'] = df_trades['entry_date'].map(next_open[ticker])
+            df_trades[f'exit_{ticker}'] = df_trades['close_date'].map(next_open[ticker])
+            cols_to_check.extend([f'entry_{ticker}', f'exit_{ticker}'])
+
+        df_trades.dropna(subset=cols_to_check, inplace=True)
+        df_trades.reset_index(drop=True, inplace=True)
+        return df_trades
+
+    def calculate_basket_trades_pnl(
+        self,
+        df_trades_with_prices: pd.DataFrame,
+        weights: Dict[str, float]
+    ) -> pd.DataFrame:
+        """
+        Kalkulacja PnL dla dowolnego koszyka N-elementowego na bazie wag z Johansena.
+        """
+        if df_trades_with_prices.empty:
+            return df_trades_with_prices
+
+        budget_per_trade = self.initial_capital * self.allocation_per_trade
+        total_abs_weight = sum(abs(w) for w in weights.values())
+        
+        # Alokacja kapitału proporcjonalnie do modułu wag |w_i|
+        cap_alloc = {t: budget_per_trade * (abs(w) / total_abs_weight) for t, w in weights.items()}
+
+        df_trades_with_prices['days_in_trade'] = (
+            pd.to_datetime(df_trades_with_prices['close_date']) - 
+            pd.to_datetime(df_trades_with_prices['entry_date'])
+        ).dt.days
+
+        gross_pnl = np.zeros(len(df_trades_with_prices))
+        exec_cost = np.zeros(len(df_trades_with_prices))
+        borrow_cost = np.zeros(len(df_trades_with_prices))
+
+        for ticker, weight in weights.items():
+            cap = cap_alloc[ticker]
+            entry_p = df_trades_with_prices[f'entry_{ticker}']
+            exit_p = df_trades_with_prices[f'exit_{ticker}']
+
+            # Zwrot z ruchu ceny
+            price_ret = (exit_p - entry_p) / entry_p
+
+            # Kierunek pozycji na danym aktywie
+            is_spread_long = (df_trades_with_prices['position'] == 'long')
+            direction = np.where(is_spread_long, np.sign(weight), -np.sign(weight))
+
+            leg_pnl = cap * direction * price_ret
+            gross_pnl += leg_pnl
+
+            # Koszty wejścia i wyjścia (friction)
+            leg_exec = (cap + cap * (exit_p / entry_p)) * self.friction_per_leg
+            exec_cost += leg_exec
+
+            # Koszt pożyczki akcji (naliczany tylko, gdy na danym aktywie jesteśmy na krótko)
+            is_short_leg = (direction < 0)
+            leg_borrow = np.where(is_short_leg, cap * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate, 0.0)
+            borrow_cost += leg_borrow
+
+        df_trades_with_prices['gross_pnl'] = gross_pnl
+        df_trades_with_prices['execution_cost'] = exec_cost
+        df_trades_with_prices['borrow_cost'] = borrow_cost
+        df_trades_with_prices['net_pnl'] = gross_pnl - exec_cost - borrow_cost
+        df_trades_with_prices['net_return_pct'] = (df_trades_with_prices['net_pnl'] / budget_per_trade) * 100.0
+
+        return df_trades_with_prices
+    
+    
     def calculate_performance_metrics(
         self, 
         df_trades_results: pd.DataFrame

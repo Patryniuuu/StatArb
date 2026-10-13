@@ -179,18 +179,22 @@ class BasketScanner:
                 continue
 
             # Wyciągamy wagi dla najsilniejszego wektora (Spread_1)
-            # Metoda calculate_johansen zwraca DataFrame, z którego robimy słownik
-            best_vector_weights = johansen_res.weights["Spread_1"].to_dict()
+            # # Metoda calculate_johansen zwraca DataFrame, z którego robimy słownik
+            # best_vector_weights = johansen_res.weights["Spread_1"].to_dict()
             
-            # Wartości własne są posortowane malejąco w eigenvalues[0]
-            max_eig = johansen_res.eigenvalues[0]
+            # # Wartości własne są posortowane malejąco w eigenvalues[0]
+            # max_eig = johansen_res.eigenvalues[0]
 
+            raw_weights = johansen_res.weights["Spread_1"].to_dict()
+            clean_weights = {ticker: float(np.real(w)) for ticker, w in raw_weights.items()}
+            max_eig = float(np.real(johansen_res.eigenvalues[0]))
+            
             dopuszczone_koszyki.append(
                 BasketAnalysisResult(
                     basket=basket,
                     rank=johansen_res.rank,
                     max_eigenvalue=max_eig,
-                    weights=best_vector_weights
+                    weights=clean_weights
                 )
             )
 
