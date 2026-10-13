@@ -2,11 +2,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-<<<<<<< HEAD
-=======
 #Importy modułow:
 import config
->>>>>>> 237cb9bf3ae58e8f50e160ebda7b50a31194fe9c
 from data.data_loader import DataLoader
 from research.market_scanner import MarketScanner
 from execution.signal_generator import SignalGenerator
@@ -31,12 +28,8 @@ def run_pipeline():
     # ==========================================
     # 2. POBIERANIE DANYCH
     # ==========================================
-<<<<<<< HEAD
-    loader = DataLoader(default_interval="1d")
-=======
     loader = DataLoader(**config.DATALOADER_PARAMS)
     print("Pobieranie kapitalizacji rynkowej...")
->>>>>>> 237cb9bf3ae58e8f50e160ebda7b50a31194fe9c
     df_caps = loader.get_market_caps(tickers)
     
     # Pobieramy pełny zakres danych od razu
@@ -49,17 +42,10 @@ def run_pipeline():
     # ==========================================
     # 3. RESEARCH LAYER (Tylko dane In-Sample!)
     # ==========================================
-<<<<<<< HEAD
     print("\n--- FAZA 1: TRENING (In-Sample: 2020-2021) ---")
     scanner = MarketScanner(max_pvalue=0.05, min_half_life=1.0, max_half_life=30.0)
     df_ranking = scanner.scan_sector(df_prices_train, df_caps)
 
-=======
-    scanner = MarketScanner(**config.SCANNER_PARAMS)
-    print("Skanowanie kointegracji i wyliczanie Half-Life...")
-    df_ranking = scanner.scan_sector(df_prices, df_caps)
-    
->>>>>>> 237cb9bf3ae58e8f50e160ebda7b50a31194fe9c
     if df_ranking.empty:
         print("Brak stacjonarnych par w okresie treningowym. Zakończenie pracy.")
         return
@@ -83,7 +69,6 @@ def run_pipeline():
     window_padding = int(np.clip(hl_train * 3.0, 15, 90))
     df_prices_padded = df_prices_all.loc[:oos_end].iloc[-(len(df_prices_test) + window_padding):]
 
-<<<<<<< HEAD
     # Budowa spreadu na nowych cenach przy użyciu ZAMROŻONEJ bety z przeszłości:
     spread_test = np.log(df_prices_padded[asset_y]) - (beta_train * np.log(df_prices_padded[asset_x]))
     df_spread_test = pd.DataFrame({'Date': spread_test.index, 'Spread': spread_test.values})
@@ -102,16 +87,6 @@ def run_pipeline():
         max_holding_period=int(hl_train * 3)
     )
     raw_trades = generator.generate(zscore_data_oos)
-=======
-    print("Obliczanie dynamicznego Z-Score...")
-    z_calc = ZScoreCalculator(**config.ZSCORE_PARAMS)
-    zscore_data = z_calc.calculate(df_spread, pair_col='Spread', half_life=hl, date_col='Date')
-
-    print("Generowanie sygnałów transakcyjnych...")
-    # Używamy poszerzonych progów z Z-Score
-    generator = SignalGenerator(config.SIGNAL_PARAMS)
-    raw_trades = generator.generate(zscore_data)
->>>>>>> 237cb9bf3ae58e8f50e160ebda7b50a31194fe9c
 
     if not raw_trades:
         print("Brak sygnałów transakcyjnych w okresie testowym.")
@@ -120,18 +95,8 @@ def run_pipeline():
     # ==========================================
     # 5. ACCOUNTING LAYER
     # ==========================================
-<<<<<<< HEAD
-    engine = BacktestEngine(
-        initial_capital=100_000,
-        commission_bps=3.0,
-        slippage_bps=3.0,
-        borrow_rate_annual=0.01,
-        allocation_per_trade=0.10
-    )
-=======
     print("Księgowanie transakcji i kalkulacja PnL...")
     engine = BacktestEngine(config.ENGINE_PARAMS)
->>>>>>> 237cb9bf3ae58e8f50e160ebda7b50a31194fe9c
 
     df_trades_prices = engine.match_execution_prices(
         trades=raw_trades,
