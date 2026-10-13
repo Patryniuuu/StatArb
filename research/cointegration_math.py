@@ -6,7 +6,8 @@ from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.adfvalues import mackinnonp
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 from scipy import stats
-
+import warnings
+warnings.filterwarnings("ignore")
 
 
 #tworzymy klasy trzymające wyniki
@@ -187,7 +188,7 @@ class CointegrationMath:
                          is_valid_ecm=is_valid_ecm) 
         
     @staticmethod
-    def calculate_johansen(log_prices: pd.DataFrame, date_col=None, det_order: int = 0, k_ar_diff: int = 1, significance_level: int = 1) -> Optional[JohansenResult]:
+    def calculate_johansen(log_prices: pd.DataFrame, date_col=None, det_order: int = 1, k_ar_diff: int = 1, significance_level: int = 0) -> Optional[JohansenResult]:
         """
         Szybki Johansen.
         data_df: DataFrame z logarytmami cen.
@@ -202,6 +203,10 @@ class CointegrationMath:
             df_clean = df_clean.drop(columns=[date_col])
         elif "Date" in df_clean.columns:
             df_clean = df_clean.drop(columns=["Date"])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            res = coint_johansen(df_clean, det_order, k_ar_diff)
         
         # det_order=0: stała w relacji kointegrującej (brak trendu)
         # k_ar_diff=1: 1 opóźniona różnica (odpowiednik VAR(2) w poziomach)
@@ -244,6 +249,6 @@ class CointegrationMath:
             is_cointegrated = True,
             rank = exact_rank,
             weights = weights_df,
-            eigenvalues = res.eig[:exact_rank]
+            eigenvalues = np.real(res.eig[:exact_rank]).astype(float)
         )
             

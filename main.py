@@ -1,110 +1,120 @@
-# Główny skrypt spinający moduły w spójny proces
+import numpy as np
 import pandas as pd
 from datetime import datetime
 
-#Importy modułow:
 from data.data_loader import DataLoader
-from research.market_scanner import PairAnalysisResult, MarketScanner
-from research.cointegration_math import CointegrationMath
+from research.market_scanner import MarketScanner
 from execution.signal_generator import SignalGenerator
 from execution.zscore_calculator import ZScoreCalculator
 from execution.backtest_engine import BacktestEngine
 
+
 def run_pipeline():
-    # ==========================================
-    # 1. KONFIGURACJA SYSTEMU
-    # ==========================================
-    tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA'] #koszyk testowy
-    start_date = "2020-01-01"
-    end_date = "2023-12-31"
+    tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA']
     
-    print(f"Uruchamianie systemu dla {len(tickers)} spółek...")
+    # 1. ROZDZIELENIE OKRESÓW CZASOWYCH
+    # Okres In-Sample (Treningowy / Formacja)
+    is_start = "2020-01-01"
+    is_end = "2021-12-31"
+
+    # Okres Out-of-Sample (Testowy / Egzekucja)
+    oos_start = "2022-01-01"
+    oos_end = "2023-12-31"
+
+    print(f"Uruchamianie rygorystycznego testu OOS dla {len(tickers)} spółek...")
 
     # ==========================================
-    # 2. POBIERANIE DANYCH (Data Layer)
+    # 2. POBIERANIE DANYCH
     # ==========================================
     loader = DataLoader(default_interval="1d")
-    print("Pobieranie kapitalizacji rynkowej...")
     df_caps = loader.get_market_caps(tickers)
-    print(df_caps)
-    print("Pobieranie historycznych cen akcji...")
-    df_prices = loader.get_prices(tickers, start_date, end_date)
+    
+    # Pobieramy pełny zakres danych od razu
+    df_prices_all = loader.get_prices(tickers, start_date=is_start, end_date=oos_end)
+
+    # Dzielimy macierz cen na zbiór treningowy i testowy
+    df_prices_train = df_prices_all.loc[is_start:is_end].copy()
+    df_prices_test = df_prices_all.loc[oos_start:oos_end].copy()
 
     # ==========================================
-    # 3. SKANOWANIE RYNKU (Research Layer)
+    # 3. RESEARCH LAYER (Tylko dane In-Sample!)
     # ==========================================
+    print("\n--- FAZA 1: TRENING (In-Sample: 2020-2021) ---")
     scanner = MarketScanner(max_pvalue=0.05, min_half_life=1.0, max_half_life=30.0)
-    print("Skanowanie kointegracji i wyliczanie Half-Life...")
-    df_ranking = scanner.scan_sector(df_prices, df_caps)
-    
+    df_ranking = scanner.scan_sector(df_prices_train, df_caps)
+
     if df_ranking.empty:
-        print("Brak stacjonarnych par w koszyku. Zakończenie pracy.")
+        print("Brak stacjonarnych par w okresie treningowym. Zakończenie pracy.")
         return
 
-    # Pobieramy najlepszą parę (index 0 po posortowaniu)
-    best_pair_data = df_ranking.iloc[0]
-    asset_y = best_pair_data['asset_y']
-    asset_x = best_pair_data['asset_x']
-    hl = best_pair_data['half_life']
-    beta = best_pair_data['beta']
-    print(f"Najlepsza para: {asset_y} (Y) vs {asset_x} (X) | Half-Life: {hl:.1f} dni")
+    best_pair = df_ranking.iloc[0]
+    asset_y = best_pair['asset_y']
+    asset_x = best_pair['asset_x']
+    hl_train = best_pair['half_life']
+    beta_train = best_pair['beta']
+
+    print(f"Wyselekcjonowana para: {asset_y} (Y) vs {asset_x} (X)")
+    print(f"Parametry z treningu -> Beta: {beta_train:.4f} | Half-Life: {hl_train:.1f} dni")
 
     # ==========================================
-    # 4. GENEROWANIE SYGNAŁÓW (Execution Layer)
+    # 4. EXECUTION LAYER (Tylko dane Out-of-Sample!)
     # ==========================================
-    # Liczymy najpierw aktualny spread dla tej pary: Y - (beta * X + alpha)
-    # Aby to zrobić bez pełnego OLS (bo mamy już betę), uprośćmy: Spread = Y - beta * X
-    spread_series = np.log(df_prices[asset_y]) - (beta * np.log(df_prices[asset_x]))
-    df_spread = pd.DataFrame({'Date': df_prices.index, 'Spread': spread_series.values})
+    print("\n--- FAZA 2: TEST TRANSAKCYJNY (Out-of-Sample: 2022-2023) ---")
+    
+    # Do poprawnego wyliczenia kroczącego Z-Score na samym początku okresu testowego
+    # dołączamy końcówkę danych treningowych, aby okno kroczące (rolling window) nie miało braków danych
+    window_padding = int(np.clip(hl_train * 3.0, 15, 90))
+    df_prices_padded = df_prices_all.loc[:oos_end].iloc[-(len(df_prices_test) + window_padding):]
 
-    print("Obliczanie dynamicznego Z-Score...")
+    # Budowa spreadu na nowych cenach przy użyciu ZAMROŻONEJ bety z przeszłości:
+    spread_test = np.log(df_prices_padded[asset_y]) - (beta_train * np.log(df_prices_padded[asset_x]))
+    df_spread_test = pd.DataFrame({'Date': spread_test.index, 'Spread': spread_test.values})
+
+    # Obliczenie Z-Score
     z_calc = ZScoreCalculator(multiplier=3.0, min_window=15, max_window=90)
-    zscore_data = z_calc.calculate(df_spread, pair_col='Spread', half_life=hl, date_col='Date')
+    zscore_data = z_calc.calculate(df_spread_test, pair_col='Spread', half_life=hl_train, date_col='Date')
 
-    print("Generowanie sygnałów transakcyjnych...")
-    # Używamy poszerzonych progów z Z-Score
+    # Odcinamy sygnały, które przypadają wyłącznie na okres Out-of-Sample
+    zscore_data_oos = [item for item in zscore_data if str(item[0]) >= oos_start]
+
     generator = SignalGenerator(
-        entry_threshold=1.5, 
-        exit_threshold=0.5, 
-        SL_threshold=3.5, 
-        max_holding_period=int(hl * 3)
+        entry_threshold=1.5,
+        exit_threshold=0.5,
+        SL_threshold=3.5,
+        max_holding_period=int(hl_train * 3)
     )
-    raw_trades = generator.generate(zscore_data)
+    raw_trades = generator.generate(zscore_data_oos)
 
     if not raw_trades:
-        print("Brak wygenerowanych transakcji dla wybranej pary.")
+        print("Brak sygnałów transakcyjnych w okresie testowym.")
         return
 
     # ==========================================
-    # 5. BACKTEST I KOSZTY (Accounting Layer)
+    # 5. ACCOUNTING LAYER
     # ==========================================
-    print("Księgowanie transakcji i kalkulacja PnL...")
     engine = BacktestEngine(
-        initial_capital=100_000, 
-        commission_bps=3.0, 
-        slippage_bps=3.0, 
+        initial_capital=100_000,
+        commission_bps=3.0,
+        slippage_bps=3.0,
         borrow_rate_annual=0.01,
-        allocation_per_trade=0.10 # Przeznaczamy 10k USD na parę
+        allocation_per_trade=0.10
     )
 
-    # Krok A: Mapowanie cen otwarcia (Next Open)
     df_trades_prices = engine.match_execution_prices(
-        trades=raw_trades, 
-        df_open_prices=df_prices, # Do urealnienia egzekucji powinniśmy tu podać ceny Open, ale do testu log_prices wystarczą
+        trades=raw_trades,
+        df_open_prices=df_prices_test,
         pair=(asset_y, asset_x)
     )
 
-    # Krok B: Kalkulacja PnL Netto
-    df_results = engine.calculate_trades_pnl(df_trades_prices, beta)
-
-    # Krok C: Metryki portfelowe
+    # Do wyliczenia PnL przekazujemy zamrożoną betę treningową
+    df_results = engine.calculate_trades_pnl(df_trades_prices, beta=beta_train)
     metrics = engine.calculate_performance_metrics(df_results)
 
     # ==========================================
-    # 6. RAPORT KOŃCOWY
+    # 6. RAPORT KOŃCOWY OUT-OF-SAMPLE
     # ==========================================
     print("\n" + "="*40)
-    print("WYNIKI SYSTEMU STAT-ARB")
+    print("WYNIKI OUT-OF-SAMPLE (REALNY TEST)")
     print("="*40)
     print(f"Liczba transakcji:   {metrics['total_trades']}")
     print(f"Zysk Netto (USD):    ${metrics['total_pnl']:,.2f}")
@@ -117,5 +127,4 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
-    import numpy as np # Importowane tutaj dla lokalnego wyliczenia spreadu
     run_pipeline()

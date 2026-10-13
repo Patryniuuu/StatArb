@@ -11,7 +11,7 @@ class BacktestEngine:
     def __init__(
         self, 
         initial_capital: float = 100_000.0, 
-        commission_bps: float = 3.0,          # Prowizja brokerska (3 bps = 0.03%)
+        commission_bps: float = 3.0,          # Prowizja brokerska (3 bps = 0.03%)  
         slippage_bps: float = 3.0,            # Poślizg cenowy + spread Bid/Ask (3 bps = 0.03%)
         borrow_rate_annual: float = 0.01,     # Koszt pożyczki akcji do shorta (1.0% rocznie)
         allocation_per_trade: float = 0.10,   # Maksymalny kapitał na jedną parę (np. 10%)
