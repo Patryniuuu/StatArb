@@ -80,10 +80,10 @@ class BacktestEngine:
         capital_x = abs(beta) * capital_y
         
         #Obliczenie zwrotów dla Y i X
-        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'return_y'] = (df_trades_with_prices['exit_y'] - df_trades_with_prices['entry_y'])/df_trades_with_prices['entry_y']
-        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'return_x'] = (df_trades_with_prices['entry_x'] - df_trades_with_prices['exit_x'])/df_trades_with_prices['entry_x']
-        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'return_x'] = (df_trades_with_prices['exit_x'] - df_trades_with_prices['entry_x'])/df_trades_with_prices['entry_x']
-        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'return_y'] = (df_trades_with_prices['entry_y'] - df_trades_with_prices['exit_y'])/df_trades_with_prices['entry_y']
+        df_trades_with_prices.loc[df_trades_with_prices['position'] == 'long', 'return_y'] = (df_trades_with_prices['exit_y'] - df_trades_with_prices['entry_y'])/df_trades_with_prices['entry_y']
+        df_trades_with_prices.loc[df_trades_with_prices['position'] == 'long', 'return_x'] = (df_trades_with_prices['entry_x'] - df_trades_with_prices['exit_x'])/df_trades_with_prices['entry_x']
+        df_trades_with_prices.loc[df_trades_with_prices['position'] == 'short', 'return_x'] = (df_trades_with_prices['exit_x'] - df_trades_with_prices['entry_x'])/df_trades_with_prices['entry_x']
+        df_trades_with_prices.loc[df_trades_with_prices['position'] == 'short', 'return_y'] = (df_trades_with_prices['entry_y'] - df_trades_with_prices['exit_y'])/df_trades_with_prices['entry_y']
 
         #Obliczenie zysku brutto i kosztów transakcji (ważne jest wzięcie pod uwagę znaku bety)
         df_trades_with_prices['gross_pnl'] = (capital_y * df_trades_with_prices['return_y']) + (np.sign(beta)*capital_x * df_trades_with_prices['return_x'])        
@@ -92,17 +92,17 @@ class BacktestEngine:
 
         #Obliczenie kosztu pożyczania akcji przy shortowaniu
         df_trades_with_prices['borrow_cost'] = 0.0
-        df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'borrow_cost'] += capital_y * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+        df_trades_with_prices.loc[df_trades_with_prices['position'] == 'short', 'borrow_cost'] += capital_y * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
         if beta > 0:
             # Dodatnia beta: X jest na krótko, gdy spread jest na długo (long)
-            df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'long', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+            df_trades_with_prices.loc[df_trades_with_prices['position'] == 'long', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
         else:
             # Ujemna beta: X jest na krótko, gdy spread jest na krótko (short) - w tym wypadku mamy shorta na Y i shorta na X!
-            df_trades_with_prices.loc[df_trades_with_prices['pozycja'] == 'short', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
+            df_trades_with_prices.loc[df_trades_with_prices['position'] == 'short', 'borrow_cost'] += capital_x * df_trades_with_prices['days_in_trade'] * self.daily_borrow_rate
 
         #Obliczenie zwrotów netto
         df_trades_with_prices['net_pnl'] = df_trades_with_prices['gross_pnl'] - df_trades_with_prices['execution_cost'] - df_trades_with_prices['borrow_cost']
-        df_trades_with_prices['net_return_pct'] = df_trades_with_prices['net_pnl'] / (capital_y + capital_x)
+        df_trades_with_prices['net_return_pct'] = (df_trades_with_prices['net_pnl'] / (capital_y + capital_x)) * 100
 
         return df_trades_with_prices
         
