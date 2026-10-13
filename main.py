@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 #Importy modułow:
+import config
 from data.data_loader import DataLoader
 from research.market_scanner import PairAnalysisResult, MarketScanner
 from research.cointegration_math import CointegrationMath
@@ -23,7 +24,7 @@ def run_pipeline():
     # ==========================================
     # 2. POBIERANIE DANYCH (Data Layer)
     # ==========================================
-    loader = DataLoader(default_interval="1d")
+    loader = DataLoader(**config.DATALOADER_PARAMS)
     print("Pobieranie kapitalizacji rynkowej...")
     df_caps = loader.get_market_caps(tickers)
     print(df_caps)
@@ -33,7 +34,7 @@ def run_pipeline():
     # ==========================================
     # 3. SKANOWANIE RYNKU (Research Layer)
     # ==========================================
-    scanner = MarketScanner(max_pvalue=0.05, min_half_life=1.0, max_half_life=30.0)
+    scanner = MarketScanner(**config.SCANNER_PARAMS)
     print("Skanowanie kointegracji i wyliczanie Half-Life...")
     df_ranking = scanner.scan_sector(df_prices, df_caps)
     
@@ -58,17 +59,12 @@ def run_pipeline():
     df_spread = pd.DataFrame({'Date': df_prices.index, 'Spread': spread_series.values})
 
     print("Obliczanie dynamicznego Z-Score...")
-    z_calc = ZScoreCalculator(multiplier=3.0, min_window=15, max_window=90)
+    z_calc = ZScoreCalculator(**config.ZSCORE_PARAMS)
     zscore_data = z_calc.calculate(df_spread, pair_col='Spread', half_life=hl, date_col='Date')
 
     print("Generowanie sygnałów transakcyjnych...")
     # Używamy poszerzonych progów z Z-Score
-    generator = SignalGenerator(
-        entry_threshold=1.5, 
-        exit_threshold=0.5, 
-        SL_threshold=3.5, 
-        max_holding_period=int(hl * 3)
-    )
+    generator = SignalGenerator(config.SIGNAL_PARAMS)
     raw_trades = generator.generate(zscore_data)
 
     if not raw_trades:
@@ -79,13 +75,7 @@ def run_pipeline():
     # 5. BACKTEST I KOSZTY (Accounting Layer)
     # ==========================================
     print("Księgowanie transakcji i kalkulacja PnL...")
-    engine = BacktestEngine(
-        initial_capital=100_000, 
-        commission_bps=3.0, 
-        slippage_bps=3.0, 
-        borrow_rate_annual=0.01,
-        allocation_per_trade=0.10 # Przeznaczamy 10k USD na parę
-    )
+    engine = BacktestEngine(config.ENGINE_PARAMS)
 
     # Krok A: Mapowanie cen otwarcia (Next Open)
     df_trades_prices = engine.match_execution_prices(
