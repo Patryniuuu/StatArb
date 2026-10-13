@@ -19,7 +19,7 @@ class DataLoader:
         for t in tickers:
             tick = yf.Ticker(t)
             # Zabezpieczenie przed brakiem danych w yfinance (częsty problem API)
-            cap = tick.fast_info.get('market_cap', None)
+            cap = tick.fast_info['market_cap']
             records.append({'ticker': t, 'marketCap': cap})
         
         # Tworzymy czystą tabelę zgodną z kontraktem dla MarketScanner

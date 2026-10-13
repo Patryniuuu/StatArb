@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from itertools import combinations
-from cointegration_math import CointegrationMath
+from research.cointegration_math import CointegrationMath
 # Importujemy nasze struktury i silnik z poprzedniego pliku (zakładając, że są w cointegration_math.py)
 # from cointegration_math import CointegrationMath
 

@@ -77,7 +77,7 @@ class CointegrationMath:
     def calculate_half_life(spread: np.ndarray) -> HalfLifeResult:
         """ Half-Life wyliczamy z równania AR(1) na spreadzie (resztach z OLS).
             Zmienna objaśniająca to spread opóźniony o 1 okres: $X = S_{t-1}$.
-            Zmienna objaśniana to różnica spreadu z dzisiaj i wczoraj: $Y = \Delta S$."""
+            Zmienna objaśniana to różnica spreadu z dzisiaj i wczoraj: $Y = Delta S$."""
         # 1. Zbuduj wektor opóźniony (X) - u Ciebie w kodzie: S[:-1]
         X = spread[:-1]
         # 3. Zbuduj wektor różnic pierwszego rzędu (Y) - u Ciebie: np.diff(S)
@@ -96,19 +96,18 @@ class CointegrationMath:
 
     @staticmethod
     def check_adf(residuals: np.ndarray, max_pvalue: float = 0.05) -> ADFResult:
-        """ Wykonuje test ADF w celu sprawdzenia stacjonarnosci spreadu"""
+        """Wykonuje test ADF w celu sprawdzenia stacjonarności spreadu."""
+        # Standardowe wywołanie zwraca pełną krotkę (statystyka, p-value, opóźnienia, ...)
         adf_res = adfuller(
-        residuals, 
-        regression='n', 
-        autolag='AIC', 
-        store=True, 
-        regresults=True, 
-        result_object=True
+            residuals, 
+            regression='n', 
+            autolag='AIC',
+            result_object=False  # Wycisza FutureWarning
         )
         
-        t_stat = adf_res[0]
-        pval = adf_res[1]
-        used_lags = adf_res[2]
+        t_stat = float(adf_res[0])
+        pval = float(adf_res[1])
+        used_lags = int(adf_res[2])
         is_stationary = bool(pval <= max_pvalue)
         
         return ADFResult(

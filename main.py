@@ -26,7 +26,7 @@ def run_pipeline():
     loader = DataLoader(default_interval="1d")
     print("Pobieranie kapitalizacji rynkowej...")
     df_caps = loader.get_market_caps(tickers)
-    
+    print(df_caps)
     print("Pobieranie historycznych cen akcji...")
     df_prices = loader.get_prices(tickers, start_date, end_date)
 
