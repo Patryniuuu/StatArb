@@ -2,12 +2,13 @@
 import pandas as pd
 from datetime import datetime
 
-# Zakładam, że zapisałeś klasy w odpowiednich plikach modułów:
-from data_loader import DataLoader
-from market_scanner import PairsScanner
-from cointegration_math import CointegrationMath
-from execution import SignalGenerator, ZScoreCalculator
-from backtest_engine import BacktestEngine
+#Importy modułow:
+from data.data_loader import DataLoader
+from research.market_scanner import PairAnalysisResult, MarketScanner
+from research.cointegration_math import CointegrationMath
+from execution.signal_generator import SignalGenerator
+from execution.zscore_calculator import ZScoreCalculator
+from execution.backtest_engine import BacktestEngine
 
 def run_pipeline():
     # ==========================================
@@ -32,7 +33,7 @@ def run_pipeline():
     # ==========================================
     # 3. SKANOWANIE RYNKU (Research Layer)
     # ==========================================
-    scanner = PairsScanner(max_pvalue=0.05, min_half_life=1.0, max_half_life=30.0)
+    scanner = MarketScanner(max_pvalue=0.05, min_half_life=1.0, max_half_life=30.0)
     print("Skanowanie kointegracji i wyliczanie Half-Life...")
     df_ranking = scanner.scan_sector(df_prices, df_caps)
     
