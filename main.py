@@ -10,7 +10,7 @@ import config
 
 from data.data_loader import DataLoader
 from research.market_scanner import MarketScanner
-from research.basket_scanner import BasketScanner
+from research.market_scanner import BasketScanner
 from research.cointegration_math import CointegrationMath
 from execution.signal_generator import SignalGenerator
 from execution.zscore_calculator import ZScoreCalculator
