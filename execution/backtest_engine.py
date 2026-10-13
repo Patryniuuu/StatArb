@@ -24,8 +24,7 @@ class BacktestEngine:
         # Jednostronny koszt wejścia/wyjścia na jednej nodze (prowizja + slippage)
         self.friction_per_leg = (commission_bps + slippage_bps) / 10_000.0
         
-        # Dzienny koszt pożyczki dla pozycji krótkiej (252 dni sesyjne w roku)
-        # zmieniam z 252 dni na 365 dni ponieważ za trzymanie w dni pozasesyjne pożyczki też się płaci, analogicznie jak ze zwykłymi pożyczkami pienięznymi to działa
+        # Dzienny koszt pożyczki dla pozycji krótkiej (365 dni sesyjne w roku)
         self.daily_borrow_rate = borrow_rate_annual / 365.0
 
     def match_execution_prices(
