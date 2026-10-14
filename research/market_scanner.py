@@ -24,14 +24,43 @@ class PairAnalysisResult:
 # 2. KLASA SKANERA (Z użyciem klasycznego OOP)
 # ==========================================
 
+
 class MarketScanner:
-    """Odpowiada za iterację po sektorze i selekcję par do arbitrażu."""
-    
-    def __init__(self, max_pvalue: float = 0.05, min_half_life: float = 1.0, max_half_life: float = 30.0):
-        # Skaner "zapamiętuje" kryteria akceptacji par
+    def __init__(
+        self,
+        max_pvalue: float = 0.05,
+        min_half_life: float = 1.0,
+        max_half_life: float = 30.0,
+        min_beta: float = 0.35,        # Minimalna beta (ochrona przed brakiem hedge'a)
+        max_beta: float = 2.50,        # Maksymalna beta (ochrona przed przeważeniem nogi X)
+        min_r_squared: float = 0.60,   # Minimalne dopasowanie OLS
+        min_return_corr: float = 0.45  # Minimalna korelacja dziennych zwrotów
+    ):
         self.max_pvalue = max_pvalue
         self.min_half_life = min_half_life
         self.max_half_life = max_half_life
+        self.min_beta = min_beta
+        self.max_beta = max_beta
+        self.min_r_squared = min_r_squared
+        self.min_return_corr = min_return_corr
+
+    def _validate_pair(self, s_y: pd.Series, s_x: pd.Series, beta: float, r_squared: float) -> bool:
+        # 1. Sprawdzenie granic współczynnika Beta
+        if not (self.min_beta <= beta <= self.max_beta):
+            return False
+
+        # 2. Sprawdzenie R^2
+        if r_squared < self.min_r_squared:
+            return False
+
+        # 3. Sprawdzenie korelacji dziennych zwrotów
+        ret_y = s_y.pct_change().dropna()
+        ret_x = s_x.pct_change().dropna()
+        corr = ret_y.corr(ret_x)
+        if corr < self.min_return_corr:
+            return False
+
+        return True
 
     def scan_sector(self, df_prices: pd.DataFrame, df_market_cap: pd.DataFrame) -> pd.DataFrame:
         """
@@ -67,9 +96,19 @@ class MarketScanner:
                 X = np.log(df_prices[pair[1]]).to_numpy()
                 Y = np.log(df_prices[pair[0]]).to_numpy()
 
-            # 2. PIERWSZY FILTR: OLS i ADF
+            # 2. PIERWSZY FILTR: OLS + Walidacja jakościowa (Beta, R^2, Korelacja zwrotów)
             ols_res = CointegrationMath.calculate_ols(Y, X)
+
+            # <--- DODANO WYWOŁANIE FILTRU WALIDACYJNEGO (4 linijki):
+            if not self._validate_pair(
+                s_y=df_prices[objasniana],
+                s_x=df_prices[objasniajaca],
+                beta=ols_res.beta,
+                r_squared=ols_res.r_squared
+            ):
+                continue
             
+            # 3. DRUGI FILTR: ADF
             adf_res = CointegrationMath.check_adf(
                 residuals=ols_res.residuals,
                 max_pvalue=self.max_pvalue
@@ -78,13 +117,13 @@ class MarketScanner:
             if not adf_res.is_stationary:
                 continue
                 
-            # 3. DRUGI FILTR: Half-Life (Przywrócony!)
+            # 4. TRZECI FILTR: Half-Life (Przywrócony!)
             half_life_res = CointegrationMath.calculate_half_life(ols_res.residuals)
             
             if not (self.min_half_life <= half_life_res.half_life <= self.max_half_life):
                 continue
                 
-            # 4. TRZECI FILTR: Error Correction Model (ECM)
+            # 5. CZWARTY FILTR: Error Correction Model (ECM)
             ecm_res = CointegrationMath.fit_ecm(
                 logX=X, 
                 logY=Y, 
@@ -96,7 +135,7 @@ class MarketScanner:
             if not ecm_res.is_valid_ecm:
                 continue
 
-            # 5. SUKCES - Dodajemy do listy
+            # 6. SUKCES - Dodajemy do listy
             dopuszczone_pary.append(
                 PairAnalysisResult(
                     asset_y=objasniana,
@@ -108,7 +147,7 @@ class MarketScanner:
                 )
             )
 
-        # 4. ZAKOŃCZENIE PĘTLI I BUDOWA RANKINGU
+        # 7. ZAKOŃCZENIE PĘTLI I BUDOWA RANKINGU
         if not dopuszczone_pary:
             # Zabezpieczenie, jeśli żadna para nie przetrwa filtrów
             return pd.DataFrame()

@@ -14,10 +14,11 @@ warnings.filterwarnings("ignore")
 
 class OLSResult:
     """Kontener na wyniki regresji liniowej."""
-    def __init__(self, alpha: float, beta: float, residuals: np.ndarray):
+    def __init__(self, alpha: float, beta: float, residuals: np.ndarray, r_squared: float):
         self.alpha = alpha
         self.beta = beta
         self.residuals = residuals
+        self.r_squared = r_squared
         
 class HalfLifeResult:
     """Kontener na estymację czasu powrotu do średniej."""
@@ -71,9 +72,15 @@ class CointegrationMath:
         beta = B[1]
         # 5. Oblicz residuals (log_y - (beta * log_x + alpha))
         residuals = log_y - (beta * log_x + alpha)
+        
+        # <--- DODANO BLOK (3 linijki): Wyliczenie współczynnika determinacji R^2
+        ss_res = np.sum(residuals ** 2)
+        ss_tot = np.sum((log_y - np.mean(log_y)) ** 2)
+        r_squared = float(1.0 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+
         # 6. Zwróć nowy obiekt OLSResult(...)
-        return OLSResult(alpha=alpha, beta=beta, residuals=residuals)
-    
+        # <--- ZMIANA: przekazujemy r_squared do konstruktora OLSResult
+        return OLSResult(alpha=alpha, beta=beta, residuals=residuals, r_squared=r_squared)    
     @staticmethod
     def calculate_half_life(spread: np.ndarray) -> HalfLifeResult:
         """ Half-Life wyliczamy z równania AR(1) na spreadzie (resztach z OLS).
