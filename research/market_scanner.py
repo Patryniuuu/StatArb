@@ -62,80 +62,78 @@ class MarketScanner:
 
         return True
 
+
     def scan_sector(self, df_prices: pd.DataFrame, df_market_cap: pd.DataFrame) -> pd.DataFrame:
-        """
-        Główna pętla skanująca.
-        df_prices: DataFrame z logarytmami cen spółek.
-        df_market_cap: DataFrame z kapitalizacją (z kolumnami 'ticker' i 'marketCap').
-        Zwraca: DataFrame z posortowanym rankingiem.
-        """
         dopuszczone_pary = []
-        tickers = df_prices.columns.to_list()
         
-        # Słownik dla szybszego wyszukiwania kapitalizacji
-        cap_dict = dict(zip(df_market_cap['ticker'], df_market_cap['marketCap']))
+        # <--- DODANO: zostawiamy tylko spółki posiadające komplet cen w badanym oknie treningowym
+        valid_cols = df_prices.columns[df_prices.notna().all()].to_list()
+        if len(valid_cols) < 2:
+            return pd.DataFrame()
 
-        for pair in combinations(tickers, 2):
-            # Używamy .get(), aby bezpiecznie pobrać kapitalizację
-            capX = cap_dict.get(pair[0])
-            capY = cap_dict.get(pair[1])
-            
-            # Zabezpieczenie przed brakami danych (None lub NaN) z API
+        df_clean = df_prices[valid_cols]
+        
+        # <--- OPTYMALIZACJA: liczymy logarytmy i macierz korelacji zwrotów RAZ przed pętlą
+        df_log = np.log(df_clean)
+        corr_matrix = df_clean.pct_change().dropna().corr()
+
+        cap_dict = dict(zip(df_market_cap['ticker'], df_market_cap['marketCap'])) if df_market_cap is not None else {}
+
+        for pair in combinations(valid_cols, 2):
+            t0, t1 = pair[0], pair[1]
+
+            # <--- SZYBKI FILTR 0: korelacja zwrotów z gotowej macierzy (O(1) zamiast liczenia Series.corr w pętli)
+            ret_corr = corr_matrix.loc[t0, t1]
+            if pd.isna(ret_corr) or ret_corr < self.min_return_corr:
+                continue
+
+            capX = cap_dict.get(t0)
+            capY = cap_dict.get(t1)
+
+            # Jeśli brak kapitalizacji z API, większą spółkę wyznaczamy po niższej zmienności zwrotów
             if capX is None or capY is None or pd.isna(capX) or pd.isna(capY):
-                continue
-            
-            # 1. FAZA PRZYGOTOWANIA DANYCH
-            if capX > capY:
-                objasniajaca = pair[0]
-                objasniana = pair[1]
-                X = np.log(df_prices[pair[0]]).to_numpy()
-                Y = np.log(df_prices[pair[1]]).to_numpy()
+                 compare_flag = df_clean[t0].pct_change().std() <= df_clean[t1].pct_change().std()
             else:
-                objasniajaca = pair[1]
-                objasniana = pair[0]
-                X = np.log(df_prices[pair[1]]).to_numpy()
-                Y = np.log(df_prices[pair[0]]).to_numpy()
+                compare_flag = (capX > capY)
 
-            # 2. PIERWSZY FILTR: OLS + Walidacja jakościowa (Beta, R^2, Korelacja zwrotów)
+            if compare_flag:
+                objasniajaca, objasniana = t0, t1
+            else:
+                objasniajaca, objasniana = t1, t0
+
+            X = df_log[objasniajaca].to_numpy()
+            Y = df_log[objasniana].to_numpy()
+
+            # 1. PIERWSZY FILTR: OLS + Walidacja Beta i R^2
             ols_res = CointegrationMath.calculate_ols(Y, X)
-
-            # <--- DODANO WYWOŁANIE FILTRU WALIDACYJNEGO (4 linijki):
-            if not self._validate_pair(
-                s_y=df_prices[objasniana],
-                s_x=df_prices[objasniajaca],
-                beta=ols_res.beta,
-                r_squared=ols_res.r_squared
-            ):
+            if not (self.min_beta <= ols_res.beta <= self.max_beta):
                 continue
-            
-            # 3. DRUGI FILTR: ADF
+            if ols_res.r_squared < self.min_r_squared:
+                continue
+
+            # 2. DRUGI FILTR: Half-Life (szybszy niż ADF i ECM - robimy go przed nimi!)
+            half_life_res = CointegrationMath.calculate_half_life(ols_res.residuals)
+            if not (self.min_half_life <= half_life_res.half_life <= self.max_half_life):
+                continue
+
+            # 3. TRZECI FILTR: ADF
             adf_res = CointegrationMath.check_adf(
                 residuals=ols_res.residuals,
                 max_pvalue=self.max_pvalue
             )
-            
             if not adf_res.is_stationary:
                 continue
-                
-            # 4. TRZECI FILTR: Half-Life (Przywrócony!)
-            half_life_res = CointegrationMath.calculate_half_life(ols_res.residuals)
-            
-            if not (self.min_half_life <= half_life_res.half_life <= self.max_half_life):
-                continue
-                
-            # 5. CZWARTY FILTR: Error Correction Model (ECM)
+
+            # 4. CZWARTY FILTR: Error Correction Model (ECM)
             ecm_res = CointegrationMath.fit_ecm(
                 logX=X, 
                 logY=Y, 
                 residuals=ols_res.residuals, 
                 significance_lvl=0.05
             )
-            
-            # Jeśli ECM odrzuci parę (brak sprzężenia zwrotnego na nodze Y), przerywamy
             if not ecm_res.is_valid_ecm:
                 continue
 
-            # 6. SUKCES - Dodajemy do listy
             dopuszczone_pary.append(
                 PairAnalysisResult(
                     asset_y=objasniana,
@@ -147,19 +145,13 @@ class MarketScanner:
                 )
             )
 
-        # 7. ZAKOŃCZENIE PĘTLI I BUDOWA RANKINGU
         if not dopuszczone_pary:
-            # Zabezpieczenie, jeśli żadna para nie przetrwa filtrów
             return pd.DataFrame()
         
-        #zamiana na dataframea    
         df_ranking = pd.DataFrame([vars(p) for p in dopuszczone_pary])
-        
-        # Sortujemy od najlepszego (najkrótszego) Half-Life
         df_ranking = df_ranking.sort_values(by="half_life", ascending=True).reset_index(drop=True)
-        
         return df_ranking
-    
+
 
 class BasketAnalysisResult:
     """Raport z analizy kointegracji wielowymiarowej (Johansen)."""
@@ -177,35 +169,43 @@ class BasketAnalysisResult:
         # Słownik z wagami, np. {'AAPL': 1.0, 'MSFT': -0.4, 'GOOGL': -0.7}
         self.weights = weights
 
+# W pliku research/market_scanner.py — ZASTĄP klasę BasketScanner:
+
 class BasketScanner:
-    """
-    Skaner rynkowy szukający kointegracji w koszykach N-elementowych 
-    przy użyciu testu Johansena.
-    """
-    def __init__(self, basket_size: int = 3, significance_level: int = 1):
-        """
-        :param basket_size: Liczba spółek w koszyku (np. 3 dla trypletów).
-        :param significance_level: Poziom ufności: 0 (90%), 1 (95%), 2 (99%).
-        """
+    def __init__(
+        self, 
+        basket_size: int = 3, 
+        significance_level: int = 1,
+        min_half_life: float = 1.0,
+        max_half_life: float = 30.0,
+        min_pair_corr: float = 0.40  # <--- DODANO: minimalna korelacja wewnątrz koszyka (chroni przed eksplozją kombinacji)
+    ):
         self.basket_size = basket_size
         self.significance_level = significance_level
+        self.min_half_life = min_half_life
+        self.max_half_life = max_half_life
+        self.min_pair_corr = min_pair_corr
 
     def scan_sector(self, df_prices: pd.DataFrame) -> pd.DataFrame:
-        """
-        Główna pętla skanująca koszyki wielowymiarowe.
-        :param df_prices: DataFrame z historycznymi cenami (poziomy, nie logarytmy).
-        :return: Posortowany DataFrame z rankingiem koszyków.
-        """
         dopuszczone_koszyki = []
-        tickers = df_prices.columns.to_list()
+        valid_cols = df_prices.columns[df_prices.notna().all()].to_list()
+        if len(valid_cols) < self.basket_size:
+            return pd.DataFrame()
 
-        # Tworzymy wszystkie możliwe kombinacje N-elementowe
-        for basket in combinations(tickers, self.basket_size):
-            # Wycięcie cen tylko dla badanego koszyka i logarytmowanie
-            df_basket_prices = df_prices[list(basket)].copy()
-            df_log_prices = np.log(df_basket_prices)
+        df_log_all = np.log(df_prices[valid_cols])
+        corr_matrix = df_prices[valid_cols].pct_change().dropna().corr()
 
-            # Uruchomienie testu Johansena
+        for basket in combinations(valid_cols, self.basket_size):
+            # <--- SZYBKI PRE-FILTR: odrzucamy trójki nieskorelowanych spółek przed uruchomieniem Johansena
+            if self.basket_size == 3:
+                c1 = corr_matrix.loc[basket[0], basket[1]]
+                c2 = corr_matrix.loc[basket[0], basket[2]]
+                c3 = corr_matrix.loc[basket[1], basket[2]]
+                if min(c1, c2, c3) < self.min_pair_corr:
+                    continue
+
+            df_log_prices = df_log_all[list(basket)]
+
             johansen_res = CointegrationMath.calculate_johansen(
                 log_prices=df_log_prices,
                 det_order=0,
@@ -213,21 +213,19 @@ class BasketScanner:
                 significance_level=self.significance_level
             )
 
-            # Odrzucamy koszyki bez kointegracji (rank == 0)
             if johansen_res is None or not johansen_res.is_cointegrated:
                 continue
 
-            # Wyciągamy wagi dla najsilniejszego wektora (Spread_1)
-            # # Metoda calculate_johansen zwraca DataFrame, z którego robimy słownik
-            # best_vector_weights = johansen_res.weights["Spread_1"].to_dict()
-            
-            # # Wartości własne są posortowane malejąco w eigenvalues[0]
-            # max_eig = johansen_res.eigenvalues[0]
-
             raw_weights = johansen_res.weights["Spread_1"].to_dict()
             clean_weights = {ticker: float(np.real(w)) for ticker, w in raw_weights.items()}
-            max_eig = float(np.real(johansen_res.eigenvalues[0]))
             
+            # <--- DODANO: Weryfikacja Half-Life dla koszyka wewnątrz skanera!
+            spread_train = sum(clean_weights[t] * df_log_prices[t] for t in basket).to_numpy()
+            hl_res = CointegrationMath.calculate_half_life(spread_train)
+            if not (self.min_half_life <= hl_res.half_life <= self.max_half_life):
+                continue
+
+            max_eig = float(np.real(johansen_res.eigenvalues[0]))
             dopuszczone_koszyki.append(
                 BasketAnalysisResult(
                     basket=basket,
@@ -237,14 +235,9 @@ class BasketScanner:
                 )
             )
 
-        # Zabezpieczenie przed brakiem wyników
         if not dopuszczone_koszyki:
             return pd.DataFrame()
 
-        # Zamiana na DataFrame i sortowanie rankingu
         df_ranking = pd.DataFrame([vars(k) for k in dopuszczone_koszyki])
-        
-        # Sortujemy od największej wartości własnej (najsilniejsza kointegracja)
         df_ranking = df_ranking.sort_values(by="max_eigenvalue", ascending=False).reset_index(drop=True)
-
         return df_ranking

@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 venv/
+repomix-output.xml
+test_backtest_engine.ipynb
+test.ipynb
+test.py

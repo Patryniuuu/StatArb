@@ -11,33 +11,24 @@ class DataLoader:
         self.default_interval = default_interval
 
     def get_market_caps(self, tickers: List[str]) -> pd.DataFrame:
-        """
-        Pobiera aktualną kapitalizację rynkową dla listy tickerów.
-        Zwraca: DataFrame z kolumnami ['ticker', 'marketCap']
-        """
         records = []
         for t in tickers:
-            tick = yf.Ticker(t)
-            # Zabezpieczenie przed brakiem danych w yfinance (częsty problem API)
-            cap = tick.fast_info['market_cap']
+            try:
+                tick = yf.Ticker(t)
+                cap = tick.fast_info.get('market_cap', None)
+            except Exception:
+                cap = None
             records.append({'ticker': t, 'marketCap': cap})
-        
-        # Tworzymy czystą tabelę zgodną z kontraktem dla MarketScanner
-        df = pd.DataFrame(records)
-        return df
+        return pd.DataFrame(records)
 
     def get_prices(
         self, 
         tickers: List[str], 
         start_date: datetime, 
         end_date: datetime, 
-        interval: Optional[str] = None
-    ) -> pd.DataFrame:
-        """
-        Pobiera ceny zamknięcia (Close) dla zadanego uniwersum i przedziału czasu.
-        Zwraca: Wyczyszczony DataFrame, gdzie indeksem jest Date/Datetime, a kolumnami tickery.
-        """
-        # Używamy interwału przekazanego w argumencie, a jeśli brak - bierzemy domyślny
+        interval: Optional[str] = None,
+        return_open: bool = False
+    ):
         selected_interval = interval if interval is not None else self.default_interval
         
         data = yf.download(
@@ -48,7 +39,15 @@ class DataLoader:
             progress=False
         )
         
-        # Wyciągamy Close i czyścimy wiersze z brakami
-        close_prices = data['Close'].dropna().copy()
+        # <--- NAPRAWA BŁĘDU NaN NA 1h: Usuwamy strefę czasową na poziomie całego DataFrame 'data'
+        # Dzięki temu zarówno 'Close', jak i 'Open' mają identyczny indeks tz-naive!
+        if getattr(data.index, 'tz', None) is not None:
+            data.index = data.index.tz_localize(None)
         
+        close_prices = data['Close'].ffill(limit=3).dropna(how='all').copy()
+            
+        if return_open:
+            open_prices = data['Open'].ffill(limit=3).reindex(close_prices.index).copy()
+            return close_prices, open_prices
+            
         return close_prices

@@ -15,6 +15,9 @@ class ZScoreCalculator:
         self.min_window = min_window
         self.max_window = max_window
 
+    # <--- DODANO METODĘ: automatycznie wylicza wymaganą długość okna (i paddingu!)
+    def get_window_length(self, half_life: float) -> int:
+        return int(np.clip(half_life * self.multiplier, self.min_window, self.max_window))
     
     def calculate(
         self, 
@@ -31,7 +34,8 @@ class ZScoreCalculator:
                 :param half_life: Parametr half-life dla danej pary.
                 :return: Lista krotek (Data, Z-score) kompatybilna z SignalGenerator.
         """
-        window_length = int(np.clip(half_life * self.multiplier, self.min_window, self.max_window))
+        # <--- ZMIANA: korzystamy z nowej metody get_window_length
+        window_length = self.get_window_length(half_life)
         
         df = df_spread[[date_col, pair_col]].copy()
         

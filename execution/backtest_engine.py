@@ -87,7 +87,12 @@ class BacktestEngine:
         #Obliczenie zysku brutto i kosztów transakcji (ważne jest wzięcie pod uwagę znaku bety)
         df_trades_with_prices['gross_pnl'] = (capital_y * df_trades_with_prices['return_y']) + (np.sign(beta)*capital_x * df_trades_with_prices['return_x'])        
         df_trades_with_prices['execution_cost'] = (capital_y + capital_x) * self.friction_per_leg + (capital_y * (df_trades_with_prices['exit_y'] / df_trades_with_prices['entry_y']) + capital_x * (df_trades_with_prices['exit_x'] / df_trades_with_prices['entry_x'])) * self.friction_per_leg
-        df_trades_with_prices['days_in_trade'] = (pd.to_datetime(df_trades_with_prices['close_date']) - pd.to_datetime(df_trades_with_prices['entry_date'])).dt.days
+        # <--- ZMIANA (w obu metodach PnL): dokładny czas w dobach (działa zarówno dla 1d, jak i 1h)
+        df_trades_with_prices['days_in_trade'] = (
+            pd.to_datetime(df_trades_with_prices['close_date']) - 
+            pd.to_datetime(df_trades_with_prices['entry_date'])
+        ).dt.total_seconds() / 86400.0
+        #df_trades_with_prices['days_in_trade'] = (pd.to_datetime(df_trades_with_prices['close_date']) - pd.to_datetime(df_trades_with_prices['entry_date'])).dt.days
 
         #Obliczenie kosztu pożyczania akcji przy shortowaniu
         df_trades_with_prices['borrow_cost'] = 0.0
@@ -150,10 +155,16 @@ class BacktestEngine:
         # Alokacja kapitału proporcjonalnie do modułu wag |w_i|
         cap_alloc = {t: budget_per_trade * (abs(w) / total_abs_weight) for t, w in weights.items()}
 
+        # df_trades_with_prices['days_in_trade'] = (
+        #     pd.to_datetime(df_trades_with_prices['close_date']) - 
+        #     pd.to_datetime(df_trades_with_prices['entry_date'])
+        # ).dt.days
+
+        # <--- ZMIANA (w obu metodach PnL): dokładny czas w dobach (działa zarówno dla 1d, jak i 1h)
         df_trades_with_prices['days_in_trade'] = (
             pd.to_datetime(df_trades_with_prices['close_date']) - 
             pd.to_datetime(df_trades_with_prices['entry_date'])
-        ).dt.days
+        ).dt.total_seconds() / 86400.0
 
         gross_pnl = np.zeros(len(df_trades_with_prices))
         exec_cost = np.zeros(len(df_trades_with_prices))
@@ -191,18 +202,12 @@ class BacktestEngine:
 
         return df_trades_with_prices
     
-    
+    # W pliku execution/backtest_engine.py — ZASTĄP metodę calculate_performance_metrics:
+
     def calculate_performance_metrics(
         self, 
         df_trades_results: pd.DataFrame
     ) -> Dict[str, float]:
-        """
-        Krok 3: Wylicza syntetyczne metryki portfelowe (Sharpe, Drawdown, Win Rate, Profit Factor).
-        
-        :param df_trades_results: Wyniki transakcji z metody calculate_trades_pnl.
-        :return: Słownik ze statystykami ryzyka i stopy zwrotu.
-        """
-        # 1. Zabezpieczenie przed pustym zbiorem transakcji (brak sygnałów)
         if df_trades_results.empty or 'net_pnl' not in df_trades_results.columns:
             return {
                 'total_trades': 0,
@@ -214,58 +219,52 @@ class BacktestEngine:
                 'sharpe_ratio': 0.0
             }
 
-        total_trades = len(df_trades_results)
-        net_pnls = df_trades_results['net_pnl'].to_numpy()
+        # <--- ZMIANA: Sortowanie chronologiczne po dacie zamknięcia pozycji!
+        df_sorted = df_trades_results.sort_values(by="close_date").reset_index(drop=True)
+        total_trades = len(df_sorted)
+        net_pnls = df_sorted['net_pnl'].to_numpy()
 
-        # 2. Total PnL i całkowity zwrot z kapitału
         total_pnl = float(np.sum(net_pnls))
         total_return_pct = (total_pnl / self.initial_capital) * 100.0
 
-        # 3. Win Rate
         winning_trades = np.sum(net_pnls > 0)
         win_rate_pct = (winning_trades / total_trades) * 100.0
 
-        # 4. Profit Factor
         gross_profit = float(np.sum(net_pnls[net_pnls > 0]))
         gross_loss = float(np.abs(np.sum(net_pnls[net_pnls < 0])))
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (np.inf if gross_profit > 0 else 0.0)
 
-        if gross_loss > 0:
-            profit_factor = gross_profit / gross_loss
-        else:
-            profit_factor = np.inf if gross_profit > 0 else 0.0
+        # # <--- ZMIANA: Budowa dziennego szeregu kapitału na pełnym zakresie dat (poprawny Drawdown i Sharpe dla portfela)
+        # start_date = pd.to_datetime(df_sorted['entry_date'].min())
+        # end_date = pd.to_datetime(df_sorted['close_date'].max())
+        # b_days = pd.date_range(start=start_date, end=end_date, freq='B')
 
-        # 5. Krzywa kapitału i Maximum Drawdown (MDD)
-        equity_curve = self.initial_capital + np.cumsum(net_pnls)
-        # Dodajemy kapitał początkowy jako punkt t=0
-        full_equity = np.insert(equity_curve, 0, self.initial_capital)
+        # daily_pnl = pd.Series(0.0, index=b_days)
+        # grouped = df_sorted.groupby(pd.to_datetime(df_sorted['close_date']))['net_pnl'].sum()
+        # valid_idx = grouped.index.intersection(daily_pnl.index)
+        # daily_pnl.loc[valid_idx] = grouped.loc[valid_idx]
+
+        # <--- ZMIANA w calculate_performance_metrics: dodajemy .dt.normalize()
+        start_date = pd.to_datetime(df_sorted['entry_date'].min()).normalize()
+        end_date = pd.to_datetime(df_sorted['close_date'].max()).normalize()
+        b_days = pd.date_range(start=start_date, end=end_date, freq='B')
+
+        daily_pnl = pd.Series(0.0, index=b_days)
+        close_dates_norm = pd.to_datetime(df_sorted['close_date']).dt.normalize()
+        grouped = df_sorted.groupby(close_dates_norm)['net_pnl'].sum()
+        valid_idx = grouped.index.intersection(daily_pnl.index)
+        daily_pnl.loc[valid_idx] = grouped.loc[valid_idx]
         
-        # High-Water Mark (kumulatywne maksimum)
-        running_max = np.maximum.accumulate(full_equity)
-        drawdowns = (full_equity - running_max) / running_max
+        daily_equity = self.initial_capital + daily_pnl.cumsum()
+        running_max = np.maximum.accumulate(daily_equity)
+        drawdowns = (daily_equity - running_max) / running_max
         max_drawdown_pct = float(np.abs(np.min(drawdowns))) * 100.0
 
-        # 6. Sharpe Ratio (annualizowany)
-        # Korzystamy ze stóp zwrotu z transakcji
-        if 'net_return_pct' in df_trades_results.columns:
-            returns = df_trades_results['net_return_pct'].to_numpy() / 100.0
-        else:
-            returns = net_pnls / self.initial_capital
-
-        mean_return = np.mean(returns)
-        std_return = np.std(returns, ddof=1) if len(returns) > 1 else 0.0
-
-        # Wyznaczenie liczby transakcji rocznie na podstawie dat
-        if total_trades > 1 and 'close_date' in df_trades_results.columns and 'entry_date' in df_trades_results.columns:
-            start_date = pd.to_datetime(df_trades_results['entry_date'].min())
-            end_date = pd.to_datetime(df_trades_results['close_date'].max())
-            total_days = max((end_date - start_date).days, 1)
-            years = total_days / 365.25
-            trades_per_year = total_trades / years if years > 0 else total_trades
-        else:
-            trades_per_year = 252.0  # Przyjęcie standardowego benchmarku sesji
-
-        if std_return > 0:
-            sharpe_ratio = float((mean_return / std_return) * np.sqrt(trades_per_year))
+        # Dzienny Sharpe Ratio portfela (annualizowany przez sqrt(252))
+        daily_returns = daily_pnl / running_max.shift(1).fillna(self.initial_capital)
+        std_daily = daily_returns.std(ddof=1)
+        if std_daily > 0:
+            sharpe_ratio = float((daily_returns.mean() / std_daily) * np.sqrt(252.0))
         else:
             sharpe_ratio = 0.0
 
@@ -278,3 +277,4 @@ class BacktestEngine:
             'max_drawdown_pct': round(max_drawdown_pct, 2),
             'sharpe_ratio': round(sharpe_ratio, 2)
         }
+    

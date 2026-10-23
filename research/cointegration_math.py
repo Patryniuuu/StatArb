@@ -104,17 +104,17 @@ class CointegrationMath:
 
     @staticmethod
     def check_adf(residuals: np.ndarray, max_pvalue: float = 0.05) -> ADFResult:
-        """Wykonuje test ADF w celu sprawdzenia stacjonarności spreadu."""
-        # Standardowe wywołanie zwraca pełną krotkę (statystyka, p-value, opóźnienia, ...)
+        """Wykonuje test ADF z rozkładem MacKinnona dla reszt z regresji kointegracyjnej (N=2)."""
         adf_res = adfuller(
             residuals, 
             regression='n', 
             autolag='AIC',
-            result_object=False  # Wycisza FutureWarning
+            result_object=False
         )
         
         t_stat = float(adf_res[0])
-        pval = float(adf_res[1])
+        # <--- ZMIANA: liczymy dokładne p-value MacKinnona dla 2 zmiennych ze stałą (N=2, regression='c')
+        pval = float(mackinnonp(t_stat, regression='c', N=2))
         used_lags = int(adf_res[2])
         is_stationary = bool(pval <= max_pvalue)
         
@@ -124,6 +124,7 @@ class CointegrationMath:
             used_lags=used_lags, 
             is_stationary=is_stationary
         )
+        
         
     @staticmethod
     def fit_ecm(logX: np.ndarray, logY: np.ndarray, residuals: np.ndarray, significance_lvl: float) -> ECMResult:
@@ -217,8 +218,7 @@ class CointegrationMath:
         
         # det_order=0: stała w relacji kointegrującej (brak trendu)
         # k_ar_diff=1: 1 opóźniona różnica (odpowiednik VAR(2) w poziomach)
-        res = coint_johansen(df_clean, det_order, k_ar_diff)
-
+        
         num_vars = df_clean.shape[1]
         exact_rank = 0
 

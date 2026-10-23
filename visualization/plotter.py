@@ -15,24 +15,45 @@ class StrategyPlotter:
         self.initial_capital = initial_capital
         plt.style.use("seaborn-v0_8-whitegrid" if "seaborn-v0_8-whitegrid" in plt.style.available else "default")
 
+    # def _build_daily_equity(
+    #     self, 
+    #     df_results: pd.DataFrame, 
+    #     daily_dates: pd.DatetimeIndex
+    # ) -> Tuple[pd.Series, pd.Series]:
+    #     """
+    #     Przekształca tabelę zamkniętych transakcji na dzienny szereg czasowy kapitału (Equity)
+    #     oraz dzienny szereg obsunięcia kapitału (Drawdown %).
+    #     """
+    #     daily_pnl = pd.Series(0.0, index=daily_dates)
+
+    #     if not df_results.empty and "net_pnl" in df_results.columns:
+    #         df_temp = df_results.copy()
+    #         df_temp["close_dt"] = pd.to_datetime(df_temp["close_date"])
+    #         # Sumujemy PnL z transakcji zamkniętych danego dnia
+    #         grouped_pnl = df_temp.groupby("close_dt")["net_pnl"].sum()
+            
+    #         # Dopasowujemy do osi dni sesyjnych OOS
+    #         valid_dates = grouped_pnl.index.intersection(daily_dates)
+    #         daily_pnl.loc[valid_dates] = grouped_pnl.loc[valid_dates]
+
+    #     equity_series = self.initial_capital + daily_pnl.cumsum()
+    #     running_max = np.maximum.accumulate(equity_series)
+    #     drawdown_pct = ((equity_series - running_max) / running_max) * 100.0
+
+    #     return equity_series, drawdown_pct
+
     def _build_daily_equity(
         self, 
         df_results: pd.DataFrame, 
         daily_dates: pd.DatetimeIndex
     ) -> Tuple[pd.Series, pd.Series]:
-        """
-        Przekształca tabelę zamkniętych transakcji na dzienny szereg czasowy kapitału (Equity)
-        oraz dzienny szereg obsunięcia kapitału (Drawdown %).
-        """
         daily_pnl = pd.Series(0.0, index=daily_dates)
 
         if not df_results.empty and "net_pnl" in df_results.columns:
             df_temp = df_results.copy()
             df_temp["close_dt"] = pd.to_datetime(df_temp["close_date"])
-            # Sumujemy PnL z transakcji zamkniętych danego dnia
             grouped_pnl = df_temp.groupby("close_dt")["net_pnl"].sum()
             
-            # Dopasowujemy do osi dni sesyjnych OOS
             valid_dates = grouped_pnl.index.intersection(daily_dates)
             daily_pnl.loc[valid_dates] = grouped_pnl.loc[valid_dates]
 
@@ -160,9 +181,8 @@ class StrategyPlotter:
 
         # Formatowanie osi dat
         ax3.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        ax3.xaxis.set_major_locator(mdates.AutoDateLocator())        
         plt.xticks(rotation=30)
-
         plt.tight_layout(rect=[0, 0, 1, 0.94])
 
         if save_path:
@@ -171,7 +191,8 @@ class StrategyPlotter:
     def plot_strategies_comparison(
         self,
         pairs_data: Dict[str, Any],
-        basket_data: Dict[str, Any]
+        basket_data: Dict[str, Any],
+        interval_label: str = "1d"  # <--- DODANO: informacja o interwale w tytule
     ) -> None:
         """
         Zestawia na jednym wykresie Krzywą Kapitału i Drawdown obu strategii (Pairs vs. Johansen Basket)
@@ -181,6 +202,10 @@ class StrategyPlotter:
         dates_p = pd.to_datetime([x[0] for x in pairs_data["zscore_oos"]])
         dates_b = pd.to_datetime([x[0] for x in basket_data["zscore_oos"]])
         common_dates = dates_p.union(dates_b).sort_values()
+        
+        # <--- DODANO: Dynamiczne odczytanie rzeczywistego zakresu dat z danych OOS
+        start_str = common_dates.min().strftime("%Y-%m-%d") if len(common_dates) > 0 else "N/A"
+        end_str = common_dates.max().strftime("%Y-%m-%d") if len(common_dates) > 0 else "N/A"
 
         eq_pairs, dd_pairs = self._build_daily_equity(pairs_data["df_results"], common_dates)
         eq_basket, dd_basket = self._build_daily_equity(basket_data["df_results"], common_dates)
@@ -197,11 +222,14 @@ class StrategyPlotter:
             sharex=True,
             gridspec_kw={"height_ratios": [2, 1]}
         )
+        # <--- ZMIANA: Dynamiczny tytuł zamiast sztywnego "(2022-2023)"!
         fig.suptitle(
-            "PORÓWNANIE STRATEGII OUT-OF-SAMPLE (2022–2023): PAIRS TRADING vs. JOHANSEN BASKET",
-            fontsize=13,
+            f"PORÓWNANIE STRATEGII OUT-OF-SAMPLE ({start_str} do {end_str} | Interwał: {interval_label})\n"
+            f"PAIRS TRADING (PnL: ${pairs_data['metrics']['total_pnl']:,.2f}, Sharpe: {pairs_data['metrics']['sharpe_ratio']:.2f}) vs. "
+            f"JOHANSEN BASKET (PnL: ${basket_data['metrics']['total_pnl']:,.2f}, Sharpe: {basket_data['metrics']['sharpe_ratio']:.2f})",
+            fontsize=12,
             fontweight="bold",
-            y=0.97
+            y=0.98
         )
 
         # Panel 1: Krzywe kapitału
@@ -223,7 +251,7 @@ class StrategyPlotter:
         ax2.grid(True, alpha=0.3)
 
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-        ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+        ax2.xaxis.set_major_locator(mdates.AutoDateLocator())
         plt.xticks(rotation=30)
 
         plt.tight_layout(rect=[0, 0, 1, 0.94])
