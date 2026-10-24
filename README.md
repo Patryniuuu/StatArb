@@ -203,12 +203,6 @@ Before running an experiment, review `config.py`. Relevant parameters include:
 
 The project retrieves market data through Yahoo Finance. Data availability, historical coverage, and returned values may change. Exact reproduction of an earlier experiment requires matching its configuration and data inputs.
 
-## Project Context
-
-This two-person university project was developed to explore econometric modeling and quantitative backtesting through practical implementation.
-
-AI-assisted tools were used as supplementary aids for concept exploration, literature discovery, and parts of the project organization. The authors implemented the core mathematical routines and backtesting logic and are responsible for the design choices, code, and interpretation of the results.
-
 ## Authors
 
 - **Patryk Kubik** — [GitHub](https://github.com/Patryniuuu)
