@@ -1,0 +1,26 @@
+\begin{table}[H]
+\centering
+\caption{Summary of Out-of-Sample Performance Metrics Across All Experimental Scenarios}
+\label{tab:master_results}
+\small
+\begin{tabular}{llccccccc}
+\toprule
+\textbf{Scenario} & \textbf{Strategy} & \textbf{Trades} & \textbf{Gross PnL} & \textbf{Costs} & \textbf{Net PnL} & \textbf{Win Rate} & \textbf{Profit Factor} & \textbf{Sharpe} \\
+\midrule
+S1: Baseline (1d, No Tech) & Pairs (Top 1) & 53 & \$-2,114.68 & \$707.24 & \textbf{\$-2,821.92} & 47.2\% & 0.43 & \textbf{-0.92} \\
+S1: Baseline (1d, No Tech) & Basket (Top 1) & 100 & \$1,983.72 & \$1,314.34 & \textbf{\$669.38} & 61.0\% & 1.11 & \textbf{0.15} \\
+S2: Diversified (3P / 2B) & Pairs (Top 3) & 135 & \$439.39 & \$734.45 & \textbf{\$-295.06} & 57.0\% & 0.92 & \textbf{-0.14} \\
+S2: Diversified (3P / 2B) & Basket (Top 2) & 199 & \$1,513.28 & \$1,299.83 & \textbf{\$213.45} & 60.8\% & 1.03 & \textbf{0.07} \\
+S3: Bear Market (2022) & Pairs (Top 1) & 12 & \$238.68 & \$160.97 & \textbf{\$77.71} & 66.7\% & 1.07 & \textbf{0.09} \\
+S3: Bear Market (2022) & Basket (Top 1) & 22 & \$1,660.71 & \$277.25 & \textbf{\$1,383.46} & 68.2\% & 2.66 & \textbf{1.78} \\
+S4: Tech Sector Only (1d) & Pairs (Top 1) & 15 & \$76.06 & \$201.74 & \textbf{\$-125.68} & 66.7\% & 0.92 & \textbf{-0.05} \\
+S4: Tech Sector Only (1d) & Basket (Top 1) & 70 & \$1,039.47 & \$934.67 & \textbf{\$104.80} & 61.4\% & 1.02 & \textbf{0.03} \\
+S5: High Entry (2.5σ Pairs) & Pairs (Top 1) & 41 & \$-391.04 & \$548.97 & \textbf{\$-940.02} & 48.8\% & 0.75 & \textbf{-0.31} \\
+S6: Intraday Baseline (1h) & Pairs (Top 1) & 94 & \$-156.63 & \$1,151.10 & \textbf{\$-1,307.73} & 53.2\% & 0.66 & \textbf{-1.08} \\
+S6: Intraday Baseline (1h) & Basket (Top 1) & 142 & \$145.00 & \$1,732.26 & \textbf{\$-1,587.25} & 52.1\% & 0.63 & \textbf{-1.54} \\
+S7: Fast Half-Life (1h, HL<=20) & Pairs (Top 1) & 94 & \$-156.63 & \$1,151.10 & \textbf{\$-1,307.73} & 53.2\% & 0.66 & \textbf{-1.08} \\
+S7: Fast Half-Life (1h, HL<=20) & Basket (Top 1) & 142 & \$145.00 & \$1,732.26 & \textbf{\$-1,587.25} & 52.1\% & 0.63 & \textbf{-1.54} \\
+S8: Johansen Basket Solo (1d) & Basket (Top 1) & 103 & \$3,958.20 & \$1,340.12 & \textbf{\$2,618.08} & 60.2\% & 1.51 & \textbf{0.66} \\
+\bottomrule
+\end{tabular}
+\end{table}

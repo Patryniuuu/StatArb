@@ -1,0 +1,15 @@
+Scenario,Strategy,Interval,Trades,Gross_PnL,Total_Costs,Net_PnL,Return_Pct,Win_Rate,Profit_Factor,Max_DD_Pct,Sharpe
+"S1: Baseline (1d, No Tech)",Pairs (Top 1),1d,53,-2114.68,707.24,-2821.92,-2.82,47.17,0.43,2.82,-0.92
+"S1: Baseline (1d, No Tech)",Basket (Top 1),1d,100,1983.72,1314.34,669.38,0.67,61.0,1.11,2.81,0.15
+S2: Diversified (3P / 2B),Pairs (Top 3),1d,135,439.39,734.45,-295.06,-0.3,57.04,0.92,0.64,-0.14
+S2: Diversified (3P / 2B),Basket (Top 2),1d,199,1513.28,1299.83,213.45,0.21,60.8,1.03,1.47,0.07
+S3: Bear Market (2022),Pairs (Top 1),1d,12,238.68,160.97,77.71,0.08,66.67,1.07,0.71,0.09
+S3: Bear Market (2022),Basket (Top 1),1d,22,1660.71,277.25,1383.46,1.38,68.18,2.66,0.51,1.78
+S4: Tech Sector Only (1d),Pairs (Top 1),1d,15,76.06,201.74,-125.68,-0.13,66.67,0.92,0.97,-0.05
+S4: Tech Sector Only (1d),Basket (Top 1),1d,70,1039.47,934.67,104.8,0.1,61.43,1.02,1.37,0.03
+S5: High Entry (2.5σ Pairs),Pairs (Top 1),1d,41,-391.04,548.97,-940.02,-0.94,48.78,0.75,1.72,-0.31
+S6: Intraday Baseline (1h),Pairs (Top 1),1h,94,-156.63,1151.1,-1307.73,-1.31,53.19,0.66,1.66,-1.08
+S6: Intraday Baseline (1h),Basket (Top 1),1h,142,145.0,1732.26,-1587.25,-1.59,52.11,0.63,2.03,-1.54
+"S7: Fast Half-Life (1h, HL<=20)",Pairs (Top 1),1h,94,-156.63,1151.1,-1307.73,-1.31,53.19,0.66,1.66,-1.08
+"S7: Fast Half-Life (1h, HL<=20)",Basket (Top 1),1h,142,145.0,1732.26,-1587.25,-1.59,52.11,0.63,2.03,-1.54
+S8: Johansen Basket Solo (1d),Basket (Top 1),1d,103,3958.2,1340.12,2618.08,2.62,60.19,1.51,1.28,0.66
